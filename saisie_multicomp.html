@@ -1,0 +1,1941 @@
+<!DOCTYPE html>
+<!-- LIGUE LR — version v3.22 — 16/09/2026 -->
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Saisie des Résultats</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Barlow:wght@300;400;500&family=Barlow+Condensed:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+    <script src="config.js"></script>
+    <!-- pdf.js : lecture best-effort du texte d'un PDF pour l'import de résultats (voir handleScoreFileImport).
+         Si cette librairie ne se charge pas (réseau, CDN indisponible), l'import PDF affichera un message
+         clair invitant à copier-coller le texte à la place — le reste de la page n'en dépend pas. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- SheetJS : génère le fichier Excel exporté et relit le fichier corrigé réimporté (voir
+         exportExcelList / handleReimportFile). Si le CDN ne charge pas, ces deux boutons afficheront
+         un message clair — le reste de la page n'en dépend pas. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --bg: #fdf6ee;
+            --surface: #ffffff;
+            --surface2: #f8f1e7;
+            --border: #efe2d2;
+            --border-active: #c1271d;
+            --accent: #c1271d;
+            --accent2: #d99a1c;
+            --accent-dim: rgba(193,39,29,0.10);
+            --text: #2a1410;
+            --text-muted: #9a7264;
+            --text-dim: #a8927d;
+            --blue: #c1271d;
+            --blue-dim: rgba(193,39,29,0.10);
+            --red: #c1271d;
+            --red-dim: rgba(193,39,29,0.10);
+            --warning: #d99a1c;
+            --warning-dim: rgba(217,154,28,0.14);
+            --radius: 8px;
+            --radius-lg: 12px;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            font-family: 'Barlow', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 24px 16px;
+            min-height: 100vh;
+            background-image:
+                radial-gradient(ellipse 80% 50% at 50% -10%, rgba(193,39,29,0.05) 0%, transparent 60%);
+        }
+
+        .container {
+            max-width: 1020px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        /* HEADER */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(120deg, #c1271d 0%, #e8861f 100%);
+            padding: 18px 26px;
+            border-radius: 16px;
+            margin-bottom: 28px;
+            box-shadow: 0 8px 22px rgba(193,39,29,0.18);
+            position: relative;
+        }
+        .header-left { display: flex; align-items: center; gap: 14px; }
+        .header-logo {
+            width: 46px; height: 46px;
+            background: rgba(255,255,255,0.18);
+            border: 1px solid rgba(255,255,255,0.5);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.3rem;
+        }
+        .header-title {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1.55rem;
+            font-weight: 700;
+            color: #ffffff;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin: 0;
+            line-height: 1;
+        }
+        .header-sub {
+            font-size: 0.75rem;
+            color: #ffe2c4;
+            font-weight: 500;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin-top: 3px;
+        }
+        .header-actions { display: flex; align-items: center; gap: 14px; }
+        .version-tag {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.7rem;
+            color: #ffffff;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            background: rgba(255,255,255,0.18);
+            border: 1px solid rgba(255,255,255,0.35);
+            padding: 3px 9px;
+            border-radius: 20px;
+        }
+        .link-back {
+            text-decoration: none;
+            color: rgba(255,255,255,0.85);
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: color 0.2s;
+            display: flex; align-items: center; gap: 5px;
+        }
+        .link-back:hover { color: #ffffff; }
+
+        /* TOGGLE IMPORT BUTTON */
+        .btn-toggle-import {
+            background: rgba(255,255,255,0.15);
+            border: 1px solid rgba(255,255,255,0.4);
+            color: #ffffff;
+            font-family: 'Barlow', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 7px 14px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            display: flex; align-items: center; gap: 7px;
+            transition: all 0.2s;
+            letter-spacing: 0.03em;
+        }
+        .btn-toggle-import:hover { background: rgba(255,255,255,0.28); border-color: #ffffff; }
+        .btn-toggle-import.active { background: rgba(255,255,255,0.28); border-color: #ffffff; color: #ffffff; }
+
+        /* PANELS */
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            margin-bottom: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+        .panel::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--blue), transparent);
+        }
+        .panel.panel-import { display: none; }
+        .panel.panel-import::before { background: linear-gradient(90deg, var(--accent), transparent); }
+        .panel.panel-edit-mode { border-color: rgba(227,179,65,0.4); }
+        .panel.panel-edit-mode::before { background: linear-gradient(90deg, var(--warning), transparent); }
+
+        .panel-title {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            margin: 0 0 18px 0;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .panel-title span { color: var(--blue); font-size: 1rem; }
+        .panel-import .panel-title span { color: var(--accent); }
+
+        /* CHAMPIONSHIP SELECTOR */
+        .champ-select-wrap { margin-bottom: 20px; }
+        .champ-select-wrap label {
+            display: block;
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.7rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+        }
+        select#typeSelector {
+            background: var(--accent);
+            color: #ffffff;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            border: none;
+            padding: 10px 14px;
+            border-radius: var(--radius);
+            width: 100%;
+            cursor: pointer;
+            outline: none;
+        }
+
+        /* FORM */
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        .field { display: flex; flex-direction: column; gap: 5px; }
+        .field label {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.68rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+        input[type="text"], input[type="number"], select, textarea {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: 'Barlow', sans-serif;
+            font-size: 0.92rem;
+            padding: 10px 12px;
+            border-radius: var(--radius);
+            outline: none;
+            width: 100%;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        input[type="text"]:focus, input[type="number"]:focus, select:focus, textarea:focus {
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px rgba(193,39,29,0.12);
+        }
+        select option { background: var(--surface2); }
+        textarea {
+            font-family: 'Barlow Condensed', monospace;
+            font-size: 0.9rem;
+            resize: vertical;
+        }
+
+        /* IMPORT HINT */
+        .import-hint {
+            background: rgba(217,154,28,0.07);
+            border: 1px solid rgba(217,154,28,0.22);
+            border-radius: var(--radius);
+            padding: 12px 14px;
+            margin-bottom: 14px;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+        .import-hint strong { color: var(--accent); }
+
+        /* BUTTONS */
+        .btn-row { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+        .slot-checks { display: flex; flex-wrap: wrap; gap: 8px; }
+        .slot-check { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); font-size: 0.9rem; cursor: pointer; user-select: none; }
+        .slot-check input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; cursor: pointer; }
+        .slot-check.full { opacity: 0.55; }
+        .slot-check.incompatible { opacity: 0.45; cursor: not-allowed; text-decoration: line-through; background: #f3ede5; }
+        .slot-check.on { border-color: var(--accent); background: #fff4ef; }
+        .disc-hint { font-size: 0.75rem; color: var(--accent); font-weight: 600; margin-top: 4px; display: none; }
+        .disc-hint.show { display: block; }
+        select#newDiscipline:disabled { opacity: 0.7; background: #f3ede5; }
+        .btn {
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 700;
+            font-size: 1rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            border: none;
+            padding: 13px 20px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.18s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn-primary { background: var(--blue); color: #fff; }
+        .btn-primary:hover { background: #a51e16; box-shadow: 0 0 18px rgba(193,39,29,0.30); }
+        .btn-import-run { background: var(--accent); color: #ffffff; }
+        .btn-import-run:hover { background: #a51e16; box-shadow: 0 0 18px rgba(193,39,29,0.30); }
+        .btn-warning { background: var(--warning); color: #2a1410; display: none; }
+        .btn-warning:hover { background: #c98a12; }
+        .btn-secondary { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); display: none; font-size: 0.85rem; padding: 10px; }
+        .btn-secondary:hover { color: var(--text); border-color: var(--text-muted); }
+
+        /* SEARCH */
+        .search-wrap { position: relative; margin-bottom: 16px; }
+        .search-wrap::before {
+            content: '⌕';
+            position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+            color: var(--text-dim); font-size: 1.1rem; pointer-events: none;
+        }
+        input#search {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 11px 12px 11px 36px;
+            font-size: 0.9rem;
+            border-radius: var(--radius);
+            width: 100%;
+            transition: border-color 0.2s;
+        }
+        input#search:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(193,39,29,0.12); outline: none; }
+        input#search::placeholder { color: var(--text-dim); }
+
+        /* SHOOTER LIST */
+        .list-container {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+        .list-header {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface2);
+        }
+        .list-header-label {
+            font-family: 'Barlow Condensed', sans-serif;
+            font-size: 0.68rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+        }
+        .shooter-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.15s;
+        }
+        .shooter-item:last-child { border-bottom: none; }
+        .shooter-item:hover { background: var(--surface2); }
+        .shooter-name {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            color: var(--text);
+        }
+        .shooter-detail {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+            display: flex; gap: 8px; flex-wrap: wrap;
+        }
+        .volees-detail {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            font-family: 'Barlow Condensed', monospace;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+            padding: 0 14px;
+            flex-shrink: 0;
+        }
+        .shooter-detail .tag {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 0.72rem;
+            font-family: 'Barlow Condensed', sans-serif;
+            letter-spacing: 0.05em;
+        }
+        .slot-tag {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 0.72rem;
+            font-family: 'Barlow Condensed', sans-serif;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            white-space: nowrap;
+            max-width: 130px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .actions { display: flex; align-items: center; gap: 8px; }
+        .score-input {
+            width: 80px;
+            padding: 8px 6px;
+            text-align: center;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 700;
+            font-size: 1.1rem;
+            letter-spacing: 0.04em;
+            background: var(--surface2);
+            border: 1px solid var(--blue);
+            color: var(--blue);
+            border-radius: var(--radius);
+        }
+        .score-input:focus { outline: none; box-shadow: 0 0 0 2px rgba(193,39,29,0.22); }
+        .btn-action {
+            border: none;
+            padding: 8px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.88rem;
+            transition: all 0.15s;
+            background: transparent;
+        }
+        .btn-edit { color: #b07d10; background: rgba(217,154,28,0.16); }
+        .btn-edit:hover { background: rgba(217,154,28,0.30); }
+        .btn-del { color: var(--red); background: var(--red-dim); }
+        .btn-del:hover { background: rgba(193,39,29,0.22); }
+
+        /* AUTOCOMPLETE */
+        #suggestions {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-top: none;
+            display: none;
+            position: absolute;
+            z-index: 100;
+            width: 100%;
+            border-radius: 0 0 var(--radius) var(--radius);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            overflow: hidden;
+        }
+        .suggestion-item {
+            padding: 10px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.88rem;
+            transition: background 0.15s;
+            color: var(--text-muted);
+        }
+        .suggestion-item:last-child { border-bottom: none; }
+        .suggestion-item:hover { background: var(--surface2); color: var(--text); }
+        .suggestion-item b { color: var(--text); font-family: 'Rajdhani', sans-serif; letter-spacing: 0.04em; }
+
+        /* EMPTY STATE */
+        .empty-state {
+            padding: 48px 24px;
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+        .empty-state .empty-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.4; }
+
+        /* SCROLLBAR */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+        @media (max-width: 600px) {
+            body { padding: 12px; }
+            .header-title { font-size: 1.15rem; }
+            .shooter-item { flex-wrap: wrap; gap: 10px; }
+            .actions { width: 100%; justify-content: flex-end; }
+        }
+
+        /* LOGIN OVERLAY */
+        #loginOverlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(74,20,16,0.45);
+            backdrop-filter: blur(6px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            padding: 20px;
+        }
+        .login-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 34px 30px;
+            width: 100%;
+            max-width: 360px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .login-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), transparent);
+        }
+        .login-logo { font-size: 2.4rem; margin-bottom: 10px; }
+        .login-title {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin: 0 0 4px 0;
+            color: var(--text);
+        }
+        .login-sub {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            margin-bottom: 22px;
+            letter-spacing: 0.05em;
+        }
+        #loginOverlay input {
+            margin-bottom: 12px;
+        }
+        #loginBtn {
+            background: var(--accent);
+            color: #ffffff;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 700;
+            font-size: 1rem;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            border: none;
+            padding: 13px 20px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.18s;
+        }
+        #loginBtn:hover { background: #a51e16; box-shadow: 0 0 18px rgba(193,39,29,0.30); }
+        .login-error {
+            color: var(--red);
+            font-size: 0.82rem;
+            margin-top: 12px;
+            min-height: 1em;
+        }
+
+        /* CALCUL SCORE (addition de plusieurs séries) */
+        .btn-calc {
+            border: none; background: var(--surface2); color: var(--blue);
+            border: 1px solid var(--blue); border-radius: var(--radius);
+            width: 34px; height: 34px; font-size: 1rem; cursor: pointer;
+            flex-shrink: 0; transition: all 0.15s;
+        }
+        .btn-calc:hover { background: var(--blue); color: white; }
+        .modal-calc {
+            position: fixed; inset: 0; background: rgba(42,20,16,0.55);
+            backdrop-filter: blur(4px); display: none;
+            align-items: center; justify-content: center; z-index: 1000; padding: 16px;
+        }
+        .modal-calc.active { display: flex; }
+        .modal-calc-content {
+            background: var(--surface); border-radius: var(--radius-lg);
+            padding: 26px; width: 100%; max-width: 380px;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.3);
+        }
+        .harm-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+        .harm-table th { text-align: left; font-family: 'Barlow Condensed', sans-serif; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); padding: 6px 4px; border-bottom: 1px solid var(--border); }
+        .harm-table td { padding: 6px 4px; border-bottom: 1px solid var(--border); font-size: 0.9rem; vertical-align: middle; }
+        .harm-table select { width: 100%; padding: 8px 10px; font-size: 0.9rem; }
+        .harm-table .cnt { color: var(--text-muted); white-space: nowrap; }
+        .harm-table tr.changed td { background: #fff4ef; }
+        .modal-calc-content.wide { max-width: 640px; max-height: 90vh; overflow-y: auto; }
+        .modal-calc-title {
+            font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 1.15rem;
+            letter-spacing: 0.03em; text-transform: uppercase; color: var(--text);
+            margin-bottom: 4px;
+        }
+        .modal-calc-hint { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 14px; }
+        .calc-series-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .calc-series-row input {
+            flex: 1; background: var(--surface2); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 9px 10px; font-size: 0.95rem;
+            color: var(--text); outline: none;
+        }
+        .calc-series-row input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(193,39,29,0.12); }
+        .calc-series-row button {
+            background: none; border: none; color: var(--text-dim); cursor: pointer;
+            font-size: 0.95rem; padding: 4px 6px;
+        }
+        .calc-series-row button:hover { color: var(--red); }
+        .btn-calc-add {
+            background: var(--surface2); border: 1px dashed var(--border); color: var(--text-muted);
+            border-radius: var(--radius); padding: 9px; width: 100%; cursor: pointer;
+            font-size: 0.85rem; margin-top: 2px; margin-bottom: 16px;
+        }
+        .btn-calc-add:hover { border-color: var(--blue); color: var(--blue); }
+        .calc-total-row {
+            display: flex; justify-content: space-between; align-items: center;
+            font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 1.3rem;
+            color: var(--blue); background: var(--surface2); border-radius: var(--radius);
+            padding: 10px 14px; margin-bottom: 18px;
+        }
+        .modal-calc .modal-actions { display: flex; gap: 10px; }
+        .modal-calc .btn-modal-cancel {
+            flex: 1; padding: 12px; border-radius: var(--radius);
+            border: 1px solid var(--border); background: var(--surface2);
+            font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 0.9rem;
+            text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; color: var(--text-muted);
+        }
+        .modal-calc .btn-modal-cancel:hover { background: var(--border); }
+        .modal-calc .btn-modal-confirm {
+            flex: 1; padding: 12px; border-radius: var(--radius); border: none;
+            background: var(--blue); color: white;
+            font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 0.9rem;
+            text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer;
+        }
+        .modal-calc .btn-modal-confirm:hover { background: #a51e16; }
+    </style>
+</head>
+<body>
+
+<div id="loginOverlay">
+    <div class="login-card">
+        <div class="login-logo">🎯</div>
+        <h2 class="login-title" id="loginClub">Saisie — Accès réservé</h2>
+        <p class="login-sub">Connecte-toi pour saisir les résultats</p>
+        <input type="email" id="loginEmail" placeholder="Email" autocomplete="username">
+        <input type="password" id="loginPwd" placeholder="Mot de passe" autocomplete="current-password">
+        <button id="loginBtn" onclick="doLogin()">Se connecter</button>
+        <div id="loginError" class="login-error"></div>
+    </div>
+</div>
+
+<div class="container">
+    <header>
+        <div class="header-left">
+            <div class="header-logo">🎯</div>
+            <div>
+                <h1 class="header-title">Saisie des Résultats</h1>
+                <div class="header-sub" id="clubSub">Ligue Languedoc-Roussillon</div>
+            </div>
+        </div>
+        <div class="header-actions">
+            <span class="version-tag">v3.22</span>
+            <button type="button" id="btnToggleImport" class="btn-toggle-import">
+                <span>🪄</span> Import Tireurs
+            </button>
+            <button type="button" id="btnToggleScoreImport" class="btn-toggle-import">
+                <span>📊</span> Import Résultats
+            </button>
+            <button type="button" class="btn-toggle-import" onclick="exportExcelList()" title="Télécharge la liste des inscrits de cette compétition au format Excel">
+                <span>📥</span> Export Excel
+            </button>
+            <button type="button" id="btnToggleReimport" class="btn-toggle-import">
+                <span>🔁</span> Réimporter
+            </button>
+            <button type="button" class="btn-toggle-import" onclick="openHarmonize()" title="Fusionner les appellations différentes d'une même discipline / catégorie">
+                <span>🧹</span> Harmoniser
+            </button>
+            <a href="index_admin.html" class="link-back">← Retour</a>
+            <a href="#" class="link-back" onclick="doLogout(); return false;">⎋ Déconnexion</a>
+        </div>
+    </header>
+
+    <!-- IMPORT BLOCK -->
+    <div class="panel panel-import" id="importBlock">
+        <div class="panel-title"><span>⚡</span> Importation Rapide — Copier-Coller Excel</div>
+        <div class="import-hint">
+            Copiez vos colonnes depuis Excel et collez-les ci-dessous.<br>
+            <strong>Ordre attendu :</strong> NOM &nbsp;|&nbsp; Prénom &nbsp;|&nbsp; Club &nbsp;|&nbsp; Code Discipline (ex: 250) &nbsp;|&nbsp; Catégorie (ex: Senior 1)
+        </div>
+        <textarea id="importArea" rows="4" placeholder="DUPONT&#9;Jean&#9;ST BEZIERS&#9;250&#9;Senior 1"></textarea>
+        <div class="btn-row" style="margin-top:12px;">
+            <button type="button" class="btn btn-import-run" onclick="processImport()">
+                🚀 Lancer l'importation automatique
+            </button>
+        </div>
+    </div>
+
+    <!-- IMPORT RÉSULTATS (fichier externe : CSV, texte copié, ou PDF) -->
+    <div class="panel panel-import" id="scoreImportBlock">
+        <div class="panel-title"><span>📊</span> Importer des résultats — tireurs déjà inscrits</div>
+        <div class="import-hint">
+            Pour renseigner d'un coup les scores d'un logiciel de résultats externe (CSV, Excel ou PDF),
+            pour des tireurs <strong>déjà présents</strong> dans la liste ci-dessous.<br>
+            <strong>Une ligne par tireur</strong>, colonnes séparées par tabulation, point-virgule ou virgule —
+            <strong>le Score doit être la dernière colonne</strong> (les autres colonnes entre Nom/Prénom et
+            Score, s'il y en a, sont ignorées). Les tireurs non trouvés dans la liste seront signalés à la fin :
+            ajoute-les d'abord à la main si besoin, puis relance l'import.
+        </div>
+        <label style="display:flex; align-items:center; gap:8px; font-size:0.82rem; color:var(--text-muted); margin-bottom:12px;">
+            <input type="checkbox" id="scoreImportHeader" style="width:auto;"> La 1ère ligne contient les titres de colonnes (à ignorer)
+        </label>
+        <div class="field" style="margin-bottom:12px;">
+            <label>Importer un fichier (.csv, .txt ou .pdf)</label>
+            <input type="file" id="scoreFileInput" accept=".csv,.txt,.pdf" onchange="handleScoreFileImport(event)">
+            <div id="scoreFileStatus" style="font-size:0.78rem; color:var(--text-dim); margin-top:5px;"></div>
+        </div>
+        <textarea id="scoreImportArea" rows="5" placeholder="DUPONT&#9;Jean&#9;95,5"></textarea>
+        <div class="btn-row" style="margin-top:12px;">
+            <button type="button" class="btn btn-import-run" onclick="processScoreImport()">
+                🚀 Importer les scores
+            </button>
+        </div>
+        <div id="scoreImportReport" style="margin-top:10px; font-size:0.85rem; color:var(--text-muted); white-space:pre-line;"></div>
+    </div>
+
+    <!-- RÉIMPORT D'UNE LISTE CORRIGÉE (après export Excel + corrections manuelles dans le tableur) -->
+    <div class="panel panel-import" id="reimportBlock">
+        <div class="panel-title"><span>🔁</span> Réimporter une liste corrigée (Excel)</div>
+        <div class="import-hint">
+            Exporte d'abord la liste avec <strong>📥 Export Excel</strong>, corrige les erreurs dans le
+            fichier (orthographe, club, discipline…) <strong>sans toucher la colonne ID</strong>, puis
+            réimporte-le ici. Une ligne avec un ID reconnu met à jour la fiche existante ; une ligne sans
+            ID (ou avec un ID inconnu) crée un nouveau tireur. Les séries/créneaux ne sont pas concernés
+            par ce réimport — à gérer séparément via « 🎟️ Séries » sur le tableau de bord si besoin.
+        </div>
+        <div class="field" style="margin-bottom:12px;">
+            <label>Fichier corrigé (.xlsx ou .csv)</label>
+            <input type="file" id="reimportFileInput" accept=".xlsx,.xls,.csv" onchange="handleReimportFile(event)">
+            <div id="reimportFileStatus" style="font-size:0.78rem; color:var(--text-dim); margin-top:5px;"></div>
+        </div>
+        <div id="reimportPreview" style="font-size:0.85rem; color:var(--text-muted); margin-bottom:10px;"></div>
+        <div class="btn-row">
+            <button type="button" class="btn btn-import-run" onclick="applyReimport()">
+                ✅ Appliquer les corrections
+            </button>
+        </div>
+        <div id="reimportReport" style="margin-top:10px; font-size:0.85rem; color:var(--text-muted); white-space:pre-line;"></div>
+    </div>
+
+    <!-- MANUAL ENTRY FORM -->
+    <div class="panel" id="formTireur">
+        <div class="panel-title"><span>✍️</span> Saisie Manuelle / Retardataires</div>
+
+        <div class="champ-select-wrap">
+            <label>Compétition</label>
+            <select id="typeSelector" onchange="updateMenus()">
+                <option value="TAR">TAR — Tir aux Armes Réglementaires</option>
+                <option value="ISSF10">ISSF 10 mètres</option>
+                <option value="ISSF2550">ISSF 25 & 50 mètres</option>
+                <option value="MLAIC">MLAIC — Armes Anciennes</option>
+                <option value="EDT">EDT — École de Tir</option>
+                <option value="AMICAL">AMICAL — Concours Amical (discipline libre)</option>
+            </select>
+        </div>
+
+        <div class="form-row">
+            <input type="hidden" id="editId">
+            <div class="field" style="position:relative;">
+                <label>Nom</label>
+                <input type="text" id="newNom" onkeyup="chercherDansArchive(this.value)" autocomplete="off" placeholder="DUPONT">
+                <div id="suggestions"></div>
+            </div>
+            <div class="field">
+                <label>Prénom</label>
+                <input type="text" id="newPrenom" autocomplete="off" placeholder="Jean">
+            </div>
+            <div class="field">
+                <label>Club</label>
+                <input type="text" id="newClub" autocomplete="off" placeholder="ST BEZIERS">
+            </div>
+            <div class="field">
+                <label>N° de licence</label>
+                <input type="text" id="newLicence" autocomplete="off" inputmode="numeric" placeholder="01234567">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="field" id="discFieldWrap">
+                <label>Discipline</label>
+                <select id="newDiscipline" onchange="updateCategories()"></select>
+            </div>
+            <div class="field" id="catFieldWrap">
+                <label>Catégorie</label>
+                <select id="newCategorie"></select>
+            </div>
+        </div>
+        <div class="disc-hint" id="discHint" style="margin:-6px 0 10px;"></div>
+        <div class="form-row" id="slotFieldRow" style="display:none;">
+            <!-- Ajout : plusieurs séries cochables → un engagement par série cochée (même discipline) -->
+            <div class="field" id="slotMultiWrap">
+                <label>Séries — coche une ou plusieurs (optionnel)</label>
+                <div class="slot-checks" id="newSlotMulti"></div>
+            </div>
+            <!-- Modification : un engagement = une seule série -->
+            <div class="field" id="slotSingleWrap" style="display:none;">
+                <label>Série (optionnel)</label>
+                <select id="newSlot"><option value="">— Aucune —</option></select>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button type="button" id="btnAdd" class="btn btn-primary" onclick="addShooter()">
+                + Enregistrer le tireur
+            </button>
+            <button type="button" id="btnAddMore" class="btn btn-secondary" style="display:block;" onclick="addShooter(true)" title="Enregistre cet engagement et garde nom / prénom / club pour en saisir un autre (autre série ou autre discipline)">
+                ➕ Enregistrer et ajouter une autre série / discipline
+            </button>
+            <button type="button" id="btnUpdate" class="btn btn-warning" onclick="saveModification()">
+                ✅ Appliquer les corrections
+            </button>
+            <button type="button" id="btnCancel" class="btn btn-secondary" onclick="resetForm()">
+                ✕ Annuler la modification
+            </button>
+        </div>
+    </div>
+
+    <!-- SEARCH -->
+    <div class="search-wrap">
+        <input type="text" id="search" placeholder="Filtrer la liste par nom ou prénom…" onkeyup="filterList()">
+    </div>
+
+    <!-- LIST -->
+    <div class="list-container">
+        <div class="list-header">
+            <span class="list-header-label">Tireurs inscrits</span>
+            <span class="list-header-label" style="color: var(--blue);">Score</span>
+        </div>
+        <div id="shooterList">
+            <div class="empty-state">
+                <div class="empty-icon">🎯</div>
+                Aucun tireur enregistré pour cette compétition.
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL CALCUL DE SCORE : additionne plusieurs séries (ex: 90 90 92 88 82 87) en un total -->
+<div class="modal-calc" id="harmonizeModal">
+    <div class="modal-calc-content wide">
+        <div class="modal-calc-title">🧹 Harmoniser les appellations</div>
+        <div class="modal-calc-hint">Les tireurs n'écrivent pas tous pareil (« Pistolet », « pistolet 10m », « Pistolet 10 m »…), ce qui crée plusieurs classements pour une même discipline. Pour chaque appellation trouvée, choisis le nom officiel à appliquer. Les lignes inchangées ne sont pas touchées.</div>
+        <div id="harmonizeBody"></div>
+        <div class="modal-actions">
+            <button class="btn-modal-cancel" onclick="closeHarmonize()">Annuler</button>
+            <button class="btn-modal-confirm" onclick="applyHarmonize()">✅ Appliquer</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal-calc" id="scoreCalcModal">
+    <div class="modal-calc-content">
+        <div class="modal-calc-title">🧮 Détail du score — <span id="calcShooterName"></span></div>
+        <div class="modal-calc-hint">Une case par série (ex : 10 tirs). Le total se calcule tout seul, et le détail des séries s'affiche ensuite dans la liste et sur l'écran TV.</div>
+        <div id="calcSeriesList"></div>
+        <button type="button" class="btn-calc-add" onclick="addSeriesField()">+ Ajouter une série</button>
+        <div class="calc-total-row">Total <span id="calcTotalValue">0</span></div>
+        <div class="modal-actions">
+            <button class="btn-modal-cancel" onclick="closeScoreCalc()">Annuler</button>
+            <button class="btn-modal-confirm" onclick="saveCalcTotal()">✅ Enregistrer</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    function toggleImportPanel(panelId, btn, closedLabel) {
+        var block = document.getElementById(panelId);
+        var isHidden = (block.style.display === 'none' || block.style.display === '');
+        block.style.display = isHidden ? 'block' : 'none';
+        btn.innerHTML = isHidden ? '<span>❌</span> Fermer' : closedLabel;
+        btn.classList.toggle('active', isHidden);
+    }
+    document.getElementById('btnToggleImport').addEventListener('click', function() {
+        toggleImportPanel('importBlock', this, '<span>🪄</span> Import Tireurs');
+    });
+    document.getElementById('btnToggleScoreImport').addEventListener('click', function() {
+        toggleImportPanel('scoreImportBlock', this, '<span>📊</span> Import Résultats');
+    });
+    document.getElementById('btnToggleReimport').addEventListener('click', function() {
+        toggleImportPanel('reimportBlock', this, '<span>🔁</span> Réimporter');
+    });
+</script>
+
+<script>
+    const dataRef = {
+        TAR: { disc: ["810 - Fusil Répétition manuelle", "811 - Fusils Modifiés Gros Calibre", "812 - Fusils Modifiés Petit Calibre", "813 - Challenges Armes à rép.", "815 - FSA - Gros Calibre", "816 - FSA - Petit Calibre", "820 - Carabine 22 lr", "821 - Carabine 22 semi-auto", "822 - Car. 22lr Assis", "823 - Carabine Match 22lr", "830 - Pistolet / Revolver", "831 - Pistolet Vitesse Réglementaire", "832 - Armes de poing Authentiques"], cats: ["Senior"] },
+        ISSF10: { disc: ["100 - Pistolet 10m", "102 - Pistolet Vitesse 10m", "103 - Pistolet Standard 10m", "104 - Carabine 10m", "107 - Arbalète Match 10m", "109 - Cible Mobile 10m", "110 - Cible Mobile Mixte 10m", "025 - Arbalète Field 18m", "171 - HP R1/R2 Car. 10m", "173 - HP R3 Car. 10m", "174 - HP R4 Car. 10m", "175 - HP R5 Car. 10m", "177 - HP VIS Car. 10m deb.", "178 - HP VIP Car. 10m couchée", "181 - HP P1/P2 Pist. 10m", "183 - HP F5 Pist. Vitesse 10m", "184 - HP P5 Pist. Standard 10m"], cats: ["Minime F", "Minime G", "Cadet F", "Cadet G", "Junior Fille", "Junior Garçon", "Dame 1", "Dame 2", "Dame 3", "Senior 1", "Senior 2", "Senior 3"] },
+        ISSF2550: { disc: ["250 - Pistolet Standard 25m", "251 - Pistolet Percussion Centrale", "252 - Pistolet 25m", "253 - Pistolet Vitesse 25m", "271 - HP - P3 - Pistolet 25m (SH1)", "272 - HP - P4 - Pistolet 50m (SH1)", "273 - HP - F10 Pistolet Standard 25m (SH1)", "500 - Pistolet 50m", "501 - Carabine 60BC", "502 - Carabine 3x20", "571 - HP - R6 Car. 50m 60 BC (SH1)", "572 - HP - R7/R8 Car. 50m 3x20 (SH1) - Mixte", "574 - HP - R9 Car. 50m 60BC Pot. (SH2)", "575 - HP - F12 Car. 50m 3x20 Pot. (SH2)", "576 - HP - F13 Car. 50m 60 BC Pot. (CLF)"], cats: ["Minime F", "Minime G", "Cadet F", "Cadet G", "Junior Fille", "Junior Garçon", "Dame 1", "Dame 2", "Dame 3", "Senior 1", "Senior 2", "Senior 3"] },
+        EDT: { disc: ["101 - Pistolet 3/7 EDT", "150 - Pistolet 10m EDT", "152 - Pistolet Vitesse 10m EDT", "154 - Carabine 10m EDT", "105 - Carabine 3x20 EDT", "158 - Arbalète Field EDT", "150/154 - Combiné EDT", "161 - HP R5 Car. 10m couchée EDT", "162 - HP R3 Car. 10m couchée EDT", "163 - HP P1 Pistolet 10m EDT"], cats: ["Poussin Fille", "Poussin Garçon", "Benjamin Fille", "Benjamin Garçon", "Minime Fille", "Minime Garçon"] },
+        MLAIC: { disc: ["601 - Miquelet Origine", "701 - Miquelet Réplique", "602 - Maximilien Origine", "702 - Maximilien Réplique", "603 - Minié Origine", "703 - Minié Réplique", "604 - Whitworth Origine", "704 - Whitworth Réplique", "605 - Cominazzo Origine", "705 - Cominazzo Réplique", "606 - Kuchenreuter Origine", "706 - Kuchenreuter Réplique", "607 - Colt", "712 - Mariette", "615 - Vetterli Origine", "715 - Vetterli Réplique", "637 - Lamarmora Origine", "737 - Lamarmora Réplique"], cats: ["Senior", "Junior"] },
+        AMICAL: { disc: [], cats: [], freeText: true }
+    };
+    // Correspondance entre la valeur "type" enregistrée à la création (index_admin.html) et une clé ci-dessus.
+    const TYPE_MAP = { ISSF10: "ISSF10", EDT: "EDT", MLAIC: "MLAIC", TAR: "TAR", "2550": "ISSF2550", AMICAL: "AMICAL" };
+
+    // La configuration (nom du club, clés Firebase, adresse du site) est dans config.js
+    firebase.initializeApp(CONFIG.firebase);
+    const db = firebase.database();
+    const auth = firebase.auth();
+    const CLUB_PATH = 'clubs/' + CONFIG.clubKey;   // dossier propre au club
+    const compId = new URLSearchParams(window.location.search).get('comp');
+
+    document.title = "Saisie — " + CONFIG.clubName;
+    document.getElementById('clubSub').textContent = CONFIG.subtitle || CONFIG.clubName;
+    document.getElementById('loginClub').textContent = CONFIG.clubName + " · Saisie";
+
+    let shootersData = [];
+    let archiveTireurs = [];
+    let listenersStarted = false;
+
+    // ─── Authentification ───
+    auth.onAuthStateChanged(user => {
+        document.getElementById('loginOverlay').style.display = user ? 'none' : 'flex';
+        if (user && !listenersStarted) {
+            listenersStarted = true;
+            startDataListeners();
+        }
+    });
+
+    function doLogin() {
+        const email = document.getElementById('loginEmail').value.trim();
+        const pwd = document.getElementById('loginPwd').value;
+        const err = document.getElementById('loginError');
+        err.textContent = 'Connexion...';
+        auth.signInWithEmailAndPassword(email, pwd)
+            .then(() => { err.textContent = ''; })
+            .catch(e => {
+                const map = {
+                    'auth/invalid-email': "Adresse email mal formée.",
+                    'auth/user-not-found': "Aucun compte avec cet email.",
+                    'auth/wrong-password': "Mot de passe incorrect.",
+                    'auth/invalid-credential': "Email ou mot de passe incorrect.",
+                    'auth/missing-password': "Mot de passe manquant.",
+                    'auth/too-many-requests': "Trop de tentatives, réessaie plus tard.",
+                    'auth/network-request-failed': "Problème de réseau.",
+                    'auth/unauthorized-domain': "Domaine non autorisé (Firebase → Auth → Authorized domains)."
+                };
+                err.textContent = (map[e.code] || "Échec de connexion.") + "  [" + e.code + "]";
+            });
+    }
+    function doLogout() { auth.signOut().then(() => location.reload()); }
+
+    document.getElementById('loginPwd').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+    // Formate la date/heure d'une série comme sur les autres pages (ex: "08/09 09:00").
+    function formatSlotWhen(slot) {
+        if (!slot.date) return '';
+        const [y, m, d] = slot.date.split('-');
+        return `${d}/${m}` + (slot.time ? ' ' + slot.time : '');
+    }
+
+    let slotByShooter = {}; // shooterId -> { slotId, label }
+    let shootersLoaded = false, slotsLoaded = false, repairing = false;
+
+    // ─── Réparation automatique des séries ───
+    // Un tireur supprimé (par un autre écran, un ancien fichier, ou directement dans Firebase) peut
+    // laisser une trace "fantôme" dans slots/<série>/registered : il apparaît encore sur les feuilles
+    // de série et occupe une place. À chaque chargement, on retire ces traces et on remet le compteur
+    // de chaque série au nombre réel d'inscrits.
+    function repairSlots() {
+        if (!shootersLoaded || !slotsLoaded || repairing) return;
+        const existing = new Set(shootersData.map(s => s.id));
+        const updates = {}; let ghosts = 0, fixedCounts = 0;
+        Object.keys(slotsData).forEach(slotId => {
+            const sl = slotsData[slotId];
+            const reg = sl.registered || {};
+            let n = 0;
+            Object.keys(reg).forEach(id => {
+                if (existing.has(id)) n++;
+                else { updates[slotId + '/registered/' + id] = null; ghosts++; }
+            });
+            if ((Number(sl.count) || 0) !== n) { updates[slotId + '/count'] = n; fixedCounts++; }
+        });
+        if (!Object.keys(updates).length) return;
+        repairing = true;
+        db.ref(CLUB_PATH + '/' + compId + '/slots').update(updates)
+            .then(() => console.info(`Séries réparées : ${ghosts} inscription(s) fantôme(s) retirée(s), ${fixedCounts} compteur(s) corrigé(s).`))
+            .catch(e => console.warn('Réparation des séries impossible :', e.message || e))
+            .finally(() => { repairing = false; });
+    }
+    let slotsData = {};     // slotId -> slot (label, capacity, count, date, time, registered)
+    let hasSlots = false;
+
+    function startDataListeners() {
+        db.ref('Ligue_Tireurs_Archive').on('value', snap => { archiveTireurs = Object.values(snap.val() || {}); });
+        if (compId) {
+            db.ref(CLUB_PATH + '/' + compId + '/shooters').on('value', snap => {
+                const data = snap.val() || {};
+                shootersData = Object.keys(data).map(key => ({ id: key, ...data[key] }));
+                shootersLoaded = true;
+                filterList();
+                repairSlots();
+            });
+            // Reconstitue, pour chaque tireur, la série où il est inscrit (si la compétition en utilise),
+            // à partir du même lien slots/registered créé au moment de l'inscription.
+            // NB (fix v3.9) : hasSlots doit refléter l'EXISTENCE de séries pour cette compétition,
+            // pas le nombre de tireurs déjà inscrits dedans — sinon des séries fraîchement créées et
+            // encore vides (0 inscrit) restaient invisibles dans le formulaire de saisie manuelle,
+            // alors qu'elles apparaissaient normalement côté inscription QR.
+            db.ref(CLUB_PATH + '/' + compId + '/slots').on('value', snap => {
+                const slots = snap.val() || {};
+                slotsData = slots;
+                const map = {};
+                Object.keys(slots).forEach(slotId => {
+                    const slot = slots[slotId];
+                    const when = formatSlotWhen(slot);
+                    const label = when ? (slot.label ? `${when} — ${slot.label}` : when) : (slot.label || '');
+                    const registered = slot.registered || {};
+                    Object.keys(registered).forEach(shooterId => { map[shooterId] = { slotId, label, poste: registered[shooterId].poste || null }; });
+                });
+                slotByShooter = map;
+                hasSlots = Object.keys(slots).length > 0;
+                slotsLoaded = true;
+                repairSlots();
+                populateSlotSelect();
+                if (dataRef[document.getElementById('typeSelector').value].freeText && !document.getElementById('editId').value) updateMenus();
+                filterList();
+            });
+            // Présélectionne le type de discipline en fonction de la compétition créée dans index_admin.html
+            db.ref(CLUB_PATH + '/' + compId + '/amicalDisciplines').on('value', snap => {
+                amicalDisciplines = snap.val();
+                if (dataRef[document.getElementById('typeSelector').value].freeText) updateMenus();
+            });
+            db.ref(CLUB_PATH + '/' + compId + '/config').once('value').then(snap => {
+                const cfg = snap.val();
+                const mapped = cfg && cfg.type && TYPE_MAP[cfg.type];
+                if (mapped) document.getElementById('typeSelector').value = mapped;
+                updateMenus();
+            });
+        } else {
+            updateMenus();
+        }
+    }
+
+    // ─── Concours amical : appellations figées (identiques à inscription_multicomp.html) ───
+    // ─── Vocabulaire tir sportif : synonymes et distances ───
+    // Permet de reconnaître « Pistolet libre » = « Pistolet 50 m », « Carabine 60 BC » = « Carabine 50 m couché »,
+    // et de déduire la distance (10 / 25 / 50 m) d'une discipline ou d'un libellé de série.
+    function discKey(name) {
+        // Retire un éventuel code numérique de catalogue officiel en préfixe (ex. "103 - Pistolet Standard 10m")
+        // — sans ça, aucune reconnaissance de synonyme/distance ne fonctionnait pour TAR/ISSF/MLAIC/EDT,
+        // seulement pour les noms libres du concours amical.
+        let raw = String(name || '').replace(/^\s*\d+\s*[-–]\s*/, '');
+        let norm = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        let k = norm.replace(/[^a-z0-9]/g, '');
+        // Distance déduite du nom (10 / 25 / 50 m), indépendamment de la variante (Standard/Vitesse/…) :
+        // « Standard » et « Vitesse » existent aussi bien en 10 m (ex. codes 102/103) qu'en 25 m (ex. codes
+        // 250/253) — ce n'est donc plus la variante qui décide la distance, contrairement à avant.
+        let dist = '';
+        const dm = k.match(/(10|25|50)m/);
+        if (dm) dist = dm[1] + 'm';
+        else if (/pistoletlibre|60bc|3x20|3x40|couche/.test(k)) dist = '50m';
+        // Détection de l'arme : "pistolet"/"pist" ou "carabine"/"car" repérés comme un MOT à part entière
+        // n'importe où dans le nom (pas seulement en tête) — indispensable pour les disciplines handisport
+        // dont le libellé commence par « HP » (ex. « HP P1/P2 Pist. 10m », « HP R6 Car. 50m 60 BC »), sans
+        // quoi elles n'étaient jamais reconnues comme du pistolet/carabine et restaient hors de toute série.
+        const words = norm.split(/[^a-z]+/).filter(Boolean);
+        const base = words.some(w => w === 'pistolet' || w === 'pist') ? 'pistolet'
+                   : words.some(w => w === 'carabine' || w === 'car') ? 'carabine'
+                   : null;
+        if (!base) return k; // discipline hors pistolet/carabine (fusil, arbalète, cible mobile…) : comparaison stricte uniquement
+        let variant = '';
+        if (/60bc|carabinecouche/.test(k)) variant = '60bc';
+        else if (/3x20|3x40/.test(k)) variant = '3x20';
+        else if (/vitesse/.test(k)) variant = 'vitesse';
+        else if (/standard/.test(k)) variant = 'standard';
+        else if (/percussion/.test(k)) variant = 'pc';
+        else if (/libre/.test(k)) variant = 'libre';
+        return base + dist + variant;
+    }
+    // Même discipline ? Synonymes compris, et nom GÉNÉRIQUE admis : « Carabine 50 m » (sans précision)
+    // couvre Carabine 60 BC 50 m et Carabine 3x20 50 m ; « Pistolet 25 m » couvre standard / vitesse / PC.
+    const GENERIC = /^(pistolet|carabine)(10|25|50)m$/;
+    // La fusion "générique couvre ses variantes" ne s'applique qu'au 25 m (Pistolet 25 m couvre
+    // Standard/Vitesse/PC) et au 50 m carabine (Carabine 50 m couvre 60 BC/3x20) — PAS au 10 m :
+    // au 10 m, Pistolet 10 m (Précision, mixte avec Carabine 10 m), Pistolet Standard 10 m et
+    // Pistolet Vitesse 10 m sont trois disciplines à part entière, chacune sa propre série, jamais
+    // interchangeables entre elles ni avec le "Pistolet 10 m" générique.
+    // La fusion "générique couvre ses variantes" ne s'applique désormais qu'au 50 m carabine
+    // (Carabine 50 m couvre 60 BC/3x20) — PAS au pistolet, ni au 10 m ni au 25 m : au 25 m,
+    // Pistolet Standard 25 m et Pistolet Vitesse 25 m sont des disciplines à part entière, chacune
+    // sa propre série, jamais interchangeables avec le "Pistolet 25 m" générique (seule Percussion
+    // Centrale peut se mélanger avec Pistolet 25 m dans une même série, mais seulement si l'admin
+    // liste explicitement les deux dans les disciplines de la série).
+    const SUBSUMABLE_GENERIC = /^carabine50m$/;
+    function sameDisc(a, b) {
+        const ka = discKey(a), kb = discKey(b);
+        if (ka === kb) return true;
+        if (SUBSUMABLE_GENERIC.test(ka) && kb.startsWith(ka)) return true;
+        if (SUBSUMABLE_GENERIC.test(kb) && ka.startsWith(kb)) return true;
+        return false;
+    }
+    function isGenericDisc(name) { return GENERIC.test(discKey(name)); }
+    function distanceOf(name) {
+        const k = discKey(name);
+        const m = k.match(/(10|25|50)m/);
+        if (m) return Number(m[1]);
+        if (/pistoletlibre|60bc|3x20|3x40|couche/.test(k)) return 50;
+        if (/vitesse|standard|percussion/.test(k)) return 25;
+        return null;
+    }
+    // Une discipline est-elle admise dans une série ?
+    //  - disciplines explicitement définies sur la série : oui si l'une d'elles est la même (synonymes compris) ;
+    //  - sinon, si le libellé de la série indique une distance (« 10 m », « 50 m », « 60 BC »…), la discipline doit
+    //    être de la MÊME distance CONNUE — une discipline dont la distance ne peut pas être déduite (ex. la
+    //    plupart des libellés TAR/MLAIC, qui ne mentionnent pas de mètres) est refusée par prudence, pour
+    //    éviter qu'une discipline 25 m ou TAR ne s'invite dans une série 10 m juste parce qu'elle vient
+    //    désormais d'un catalogue plus large (concours amical) ;
+    //  - sinon (série vraiment libre, sans distance connue) : oui.
+    function discAllowedInSlot(disc, slot) {
+        const allowed = slot && Array.isArray(slot.disciplines) ? slot.disciplines : [];
+        if (allowed.length) return allowed.some(a => sameDisc(a, disc));
+        const ds = slot ? distanceOf(slot.label) : null;
+        if (!ds) return true;
+        return distanceOf(disc) === ds;
+    }
+    // Nom « officiel » d'une discipline : celui du menu s'il existe un synonyme, sinon le nom tel quel
+    // (évite « Pistolet libre » et « Pistolet libre 50 m » dans deux classements différents).
+    function canonicalDisc(name, menu) {
+        const hit = (menu || []).find(m => sameDisc(m, name));
+        return hit || name;
+    }
+    function uniqDisc(list) {
+        const seen = new Set(); const out = [];
+        list.forEach(d => { const k = discKey(d); if (!seen.has(k)) { seen.add(k); out.push(d); } });
+        return out;
+    }
+    // Libellés EXACTEMENT ceux du catalogue officiel (avec leur code) — pas des noms génériques
+    // simplifiés — pour qu'il n'existe jamais deux écritures différentes de la même discipline
+    // (ex. "Pistolet 10 m" vs "100 - Pistolet 10m") qui se retrouveraient sur deux lignes
+    // séparées dans les classements alors qu'il s'agit du même événement.
+    const AMICAL_DEFAULT_DISC = ["100 - Pistolet 10m", "104 - Carabine 10m", "252 - Pistolet 25m", "500 - Pistolet 50m", "501 - Carabine 60BC", "502 - Carabine 3x20"];
+    const AMICAL_CATS = ["Poussin Fille", "Poussin Garçon", "Benjamin Fille", "Benjamin Garçon", "Minime Fille", "Minime Garçon",
+        "Cadet Fille", "Cadet Garçon", "Junior Fille", "Junior Garçon", "Dame 1", "Dame 2", "Dame 3", "Senior 1", "Senior 2", "Senior 3",
+        "HP P1", "HP P1/P2", "HP P3", "HP P4", "HP P5", "HP R1/R2", "HP R3", "HP R4", "HP R5", "HP R6", "HP R7/R8", "HP R9",
+        "HP VIS", "HP VIP", "HP F5", "HP F10", "HP F12", "HP F13", "Loisir"];
+    let amicalDisciplines = null; // liste propre à la compétition (tableau de bord → Modifier)
+
+    // (2026-09-12) Harmonisation saisie/QR : le classement para-tir (HP...) est désormais porté par la
+    // CATÉGORIE (liste ci-dessus), pas par la discipline. La discipline amicale reste donc un choix
+    // simple d'arme/distance (100 - Pistolet 10m, 104 - Carabine 10m, 500 - Pistolet 50m…) — le catalogue
+    // officiel complet (Standard/Vitesse/HP/EDT) n'est plus proposé ici, pour que les deux façons de
+    // s'inscrire (saisie admin et QR) donnent exactement le même menu.
+    function amicalDiscList() {
+        let base = (Array.isArray(amicalDisciplines) && amicalDisciplines.length) ? amicalDisciplines.slice() : AMICAL_DEFAULT_DISC.slice();
+        Object.values(slotsData || {}).forEach(sl => {
+            (Array.isArray(sl.disciplines) ? sl.disciplines : []).forEach(d => { if (!base.some(b => sameDisc(b, d))) base.push(d); });
+        });
+        return uniqDisc(base); // fusionne les synonymes tapés à la main (liste du concours / des séries)
+    }
+    function escAttr(v) { return String(v || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+    function optsHtml(list, selected) {
+        return list.map(x => `<option value="${escAttr(x)}" ${x === selected ? 'selected' : ''}>${x}</option>`).join('');
+    }
+
+    function updateMenus() {
+        const type = document.getElementById('typeSelector').value;
+        const catDef = dataRef[type];
+        const discWrap = document.getElementById('discFieldWrap');
+        const catWrap = document.getElementById('catFieldWrap');
+
+        if (catDef.freeText || catDef.disc.length === 0) {
+            // Amical : menus figés (liste de la compétition + disciplines des séries) — plus de texte libre,
+            // pour éviter « Pistolet » / « pistolet 10m » / « Pistolet 10 m » dans trois classements.
+            const curD = (document.getElementById('newDiscipline') || {}).value || '';
+            const curC = (document.getElementById('newCategorie') || {}).value || '';
+            const list = amicalDiscList();
+            const discs = list.includes(curD) || !curD ? list : [curD].concat(list); // conserve une ancienne valeur en édition
+            const cats = AMICAL_CATS.includes(curC) || !curC ? AMICAL_CATS : [curC].concat(AMICAL_CATS);
+            discWrap.innerHTML = '<label>Discipline</label><select id="newDiscipline">' + optsHtml(discs, curD || discs[0]) + '</select>';
+            catWrap.innerHTML = '<label>Catégorie</label><select id="newCategorie">' + optsHtml(cats, curC || 'Senior 1') + '</select>';
+            applySlotDisciplineConstraint();
+            return;
+        }
+
+        discWrap.innerHTML = '<label>Discipline</label><select id="newDiscipline" onchange="updateCategories()"></select>';
+        document.getElementById('newDiscipline').innerHTML = catDef.disc.map(d => `<option value="${d}">${d}</option>`).join('');
+        catWrap.innerHTML = '<label>Catégorie</label><select id="newCategorie"></select>';
+        updateCategories();
+        applySlotDisciplineConstraint();
+    }
+
+    function updateCategories() {
+        const type = document.getElementById('typeSelector').value;
+        const catDef = dataRef[type];
+        if (catDef.freeText) return; // catégorie déjà en texte libre
+        const discValue = document.getElementById('newDiscipline').value || "";
+
+        let cats = catDef.cats;
+
+        if (type === "ISSF2550") {
+            if (discValue.match(/^(501|502)/)) {
+                cats = ["Minime F", "Minime G", "Cadet F", "Cadet G", "Junior Fille", "Junior Garçon", "Dame 1", "Dame 2", "Dame 3", "Senior 1", "Senior 2", "Senior 3"];
+            } else if (discValue.match(/^(250|251|252|253|500)/)) {
+                cats = ["Cadet F", "Cadet G", "Junior Fille", "Junior Garçon", "Dame 1", "Dame 2", "Dame 3", "Senior 1", "Senior 2", "Senior 3"];
+            } else if (discValue.match(/^(27|57)/)) {
+                cats = ["Senior 1"]; 
+            }
+        }
+        
+        document.getElementById('newCategorie').innerHTML = cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+
+    function processImport() {
+        const text = document.getElementById('importArea').value.trim();
+        if (!text) return alert("Veuillez coller des données provenant d'Excel dans la zone.");
+        const lines = text.split('\n');
+        let count = 0;
+        let doublons = 0;
+
+        lines.forEach(line => {
+            const cols = line.split('\t');
+            if (cols.length >= 4) { 
+                let nom = cols[0].trim().toUpperCase();
+                let prenom = cols[1].trim();
+                let club = cols[2].trim() || "-";
+                let rawDisc = cols[3].trim();
+                let cat = cols[4] ? cols[4].trim() : "Senior 1";
+                
+                let fullDisc = rawDisc;
+                for (let type in dataRef) {
+                    let found = dataRef[type].disc.find(d => d.startsWith(rawDisc));
+                    if (found) { fullDisc = found; break; }
+                }
+
+                if (nom && prenom) {
+                    let existeDeja = shootersData.some(s => s.lastName === nom && s.firstName === prenom && s.discipline === fullDisc);
+                    
+                    if (existeDeja) {
+                        doublons++;
+                    } else {
+                        const s = { lastName: nom, firstName: prenom, club: club, discipline: fullDisc, category: cat, score: 0 };
+                        db.ref(CLUB_PATH + '/' + compId + '/shooters').push(s);
+                        const key = nom.replace(/[^a-zA-Z]/g, "") + "_" + prenom.replace(/[^a-zA-Z]/g, "");
+                        db.ref('Ligue_Tireurs_Archive/' + key).update({ lastName: nom, firstName: prenom, club: club });
+                        count++;
+                    }
+                }
+            }
+        });
+        
+        if (count > 0 || doublons > 0) {
+            let msg = "";
+            if (count > 0) msg += `🚀 Succès ! ${count} engagements ont été importés.\n`;
+            if (doublons > 0) msg += `⚠️ Note : ${doublons} doublons ignorés (déjà inscrits).`;
+            alert(msg);
+            document.getElementById('importArea').value = '';
+            document.getElementById('btnToggleImport').click(); 
+        }
+    }
+
+    // ─── Import de résultats (scores) depuis un fichier externe ───
+
+    // pdf.js a besoin d'un "worker" séparé pour lire le PDF sans bloquer la page.
+    // Si la librairie ne s'est pas chargée (CDN indisponible), on le détecte plus bas
+    // et on affiche un message clair plutôt que de planter silencieusement.
+    if (typeof pdfjsLib !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    // Découpe une ligne en colonnes en devinant le séparateur : tabulation (copier-coller Excel)
+    // en priorité, sinon point-virgule ou virgule (CSV) — on choisit celui qui apparaît le plus,
+    // car un score écrit "95,5" (virgule décimale française) ne doit pas être pris pour un séparateur.
+    function splitAuto(line) {
+        if (line.indexOf('\t') !== -1) return line.split('\t');
+        const nbSemi = (line.match(/;/g) || []).length;
+        const nbComma = (line.match(/,/g) || []).length;
+        if (nbSemi >= nbComma && nbSemi > 0) return line.split(';');
+        if (nbComma > 0) return line.split(',');
+        return [line];
+    }
+
+    function handleScoreFileImport(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const status = document.getElementById('scoreFileStatus');
+        status.textContent = 'Lecture du fichier…';
+
+        if (file.name.toLowerCase().endsWith('.pdf')) {
+            if (typeof pdfjsLib === 'undefined') {
+                status.textContent = "⚠️ La lecture de PDF n'a pas pu se charger (réseau). Ouvre le PDF, sélectionne tout le texte (Ctrl/Cmd+A), copie-le, et colle-le directement dans la zone ci-dessous.";
+                return;
+            }
+            extractPdfText(file)
+                .then(text => {
+                    document.getElementById('scoreImportArea').value = text;
+                    status.textContent = "⚠️ Texte extrait du PDF — la mise en page d'un PDF n'est jamais garantie, vérifie et corrige les colonnes ci-dessous avant de lancer l'import.";
+                })
+                .catch(e => {
+                    status.textContent = "Impossible de lire ce PDF (" + (e.message || e) + "). Essaie de copier-coller le texte directement à la place.";
+                });
+        } else {
+            const reader = new FileReader();
+            reader.onload = () => {
+                document.getElementById('scoreImportArea').value = reader.result;
+                status.textContent = '✓ Fichier chargé — vérifie les colonnes ci-dessous avant de lancer l\'import.';
+            };
+            reader.onerror = () => { status.textContent = "Impossible de lire ce fichier."; };
+            reader.readAsText(file, 'UTF-8');
+        }
+    }
+
+    // Extraction "best effort" du texte d'un PDF, en reconstituant des lignes à partir de la
+    // position des mots (regroupés par hauteur Y proche, triés par X) — fonctionne pour un tableau
+    // simple d'un PDF texte (pas un scan/image). À vérifier/corriger avant de lancer l'import.
+    function extractPdfText(file) {
+        return file.arrayBuffer()
+            .then(buf => pdfjsLib.getDocument({ data: buf }).promise)
+            .then(pdf => {
+                const pagePromises = [];
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    pagePromises.push(
+                        pdf.getPage(i)
+                           .then(page => page.getTextContent())
+                           .then(content => {
+                               const rows = [];
+                               content.items.forEach(item => {
+                                   const y = Math.round(item.transform[5]);
+                                   let row = rows.find(r => Math.abs(r.y - y) <= 2);
+                                   if (!row) { row = { y, items: [] }; rows.push(row); }
+                                   row.items.push({ x: item.transform[4], text: item.str });
+                               });
+                               rows.sort((a, b) => b.y - a.y);
+                               return rows
+                                   .map(r => r.items.sort((a, b) => a.x - b.x).map(i => i.text).join('\t'))
+                                   .join('\n');
+                           })
+                    );
+                }
+                return Promise.all(pagePromises).then(pages => pages.join('\n'));
+            });
+    }
+
+    function processScoreImport() {
+        const raw = document.getElementById('scoreImportArea').value.trim();
+        if (!raw) return alert("Colle ou importe des données d'abord.");
+        const skipHeader = document.getElementById('scoreImportHeader').checked;
+        let lines = raw.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        if (skipHeader) lines = lines.slice(1);
+
+        let updated = 0;
+        const notFound = [];
+
+        lines.forEach(line => {
+            const cols = splitAuto(line);
+            if (cols.length < 3) return; // au minimum : Nom, Prénom, Score
+            const nom = cols[0].trim().toUpperCase();
+            const prenom = cols[1].trim();
+            const scoreRaw = cols[cols.length - 1].trim().replace(',', '.');
+            const score = parseFloat(scoreRaw);
+            if (!nom || !prenom || isNaN(score)) return;
+
+            const matches = shootersData.filter(s =>
+                s.lastName.toUpperCase() === nom && s.firstName.toUpperCase() === prenom.toUpperCase());
+
+            if (matches.length === 0) {
+                notFound.push(`${nom} ${prenom}`);
+            } else {
+                // S'il y a plusieurs engagements pour le même nom (plusieurs disciplines), on met
+                // à jour tous les engagements trouvés avec ce score — à corriger à la main ensuite
+                // dans la liste si un seul des deux était concerné.
+                matches.forEach(m => db.ref(CLUB_PATH + '/' + compId + '/shooters/' + m.id).update({ score }));
+                updated += matches.length;
+            }
+        });
+
+        let report = `✅ ${updated} score(s) mis à jour.`;
+        if (notFound.length > 0) {
+            report += `\n\n⚠️ ${notFound.length} tireur(s) non trouvé(s) dans la liste (ajoute-les d'abord manuellement, puis relance l'import) :\n` + notFound.join(', ');
+        }
+        document.getElementById('scoreImportReport').textContent = report;
+        if (updated > 0 && notFound.length === 0) {
+            document.getElementById('scoreImportArea').value = '';
+            document.getElementById('scoreFileStatus').textContent = '';
+        }
+    }
+
+    // ─── Export / Réimport Excel de la liste complète ───
+    // L'export inclut une colonne ID (identifiant interne Firebase) invisible à l'usage mais
+    // essentielle au réimport : c'est elle qui permet de mettre à jour la BONNE fiche plutôt que
+    // d'en créer une nouvelle ou de se tromper en cas d'homonymes. Ne jamais la modifier à la main.
+    function exportExcelList() {
+        if (typeof XLSX === 'undefined') {
+            return alert("La génération du fichier Excel n'a pas pu se charger (réseau). Réessaie dans un instant.");
+        }
+        if (!shootersData.length) return alert("Aucun tireur à exporter pour cette compétition.");
+        const rows = shootersData.map(s => ({
+            ID: s.id,
+            Nom: s.lastName || '',
+            'Prénom': s.firstName || '',
+            Club: s.club || '',
+            Discipline: s.discipline || '',
+            'Catégorie': s.category || '',
+            Licence: s.licence || '',
+            Score: s.score || 0,
+            'Série (info, ne pas modifier)': (slotByShooter[s.id] && slotByShooter[s.id].label) || ''
+        }));
+        const ws = XLSX.utils.json_to_sheet(rows);
+        ws['!cols'] = [{ wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 14 }, { wch: 12 }, { wch: 8 }, { wch: 20 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Inscrits');
+        XLSX.writeFile(wb, `inscrits_${compId || 'competition'}.xlsx`);
+    }
+
+    let pendingReimportRows = null;
+
+    function handleReimportFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const status = document.getElementById('reimportFileStatus');
+        if (typeof XLSX === 'undefined') {
+            status.textContent = "La lecture du fichier n'a pas pu se charger (réseau). Réessaie dans un instant.";
+            return;
+        }
+        status.textContent = 'Lecture du fichier…';
+        document.getElementById('reimportPreview').textContent = '';
+        document.getElementById('reimportReport').textContent = '';
+        pendingReimportRows = null;
+        const reader = new FileReader();
+        reader.onload = e => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const wb = XLSX.read(data, { type: 'array' });
+                const sheet = wb.Sheets[wb.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+                pendingReimportRows = rows;
+                const valid = rows.filter(r => rowNom(r) && rowPrenom(r));
+                const withId = valid.filter(r => rowId(r) && shootersData.some(s => s.id === rowId(r))).length;
+                status.textContent = `✓ Fichier lu — ${rows.length} ligne(s).`;
+                document.getElementById('reimportPreview').textContent =
+                    `${valid.length} ligne(s) valide(s) détectée(s) : ${withId} mise(s) à jour de tireur(s) existant(s), ${valid.length - withId} nouvelle(s) fiche(s) à créer. Vérifie que ça correspond avant de cliquer "Appliquer".`;
+            } catch (err) {
+                status.textContent = "Impossible de lire ce fichier (" + (err.message || err) + "). Vérifie qu'il s'agit bien du fichier exporté (ou d'un .xlsx/.csv avec les mêmes colonnes).";
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    // Lit une colonne quel que soit l'accent/la casse exacte conservée par le tableur à la réouverture.
+    function rowGet(r, names) { for (const n of names) { if (r[n] !== undefined && r[n] !== '') return r[n]; } return ''; }
+    function rowId(r) { return String(rowGet(r, ['ID', 'Id', 'id'])).trim(); }
+    function rowNom(r) { return String(rowGet(r, ['Nom', 'NOM', 'nom'])).trim(); }
+    function rowPrenom(r) { return String(rowGet(r, ['Prénom', 'Prenom', 'prénom', 'prenom'])).trim(); }
+
+    function applyReimport() {
+        if (!pendingReimportRows || !pendingReimportRows.length) return alert("Importe d'abord un fichier corrigé ci-dessus.");
+        const existingIds = new Set(shootersData.map(s => s.id));
+        let updated = 0, created = 0, skipped = 0;
+        pendingReimportRows.forEach(r => {
+            const nom = rowNom(r).toUpperCase();
+            const prenom = rowPrenom(r);
+            if (!nom || !prenom) { skipped++; return; }
+            const id = rowId(r);
+            const data = {
+                lastName: nom,
+                firstName: prenom,
+                club: String(rowGet(r, ['Club', 'club'])).trim() || '-',
+                discipline: String(rowGet(r, ['Discipline', 'discipline'])).trim(),
+                category: String(rowGet(r, ['Catégorie', 'Categorie', 'catégorie', 'categorie'])).trim() || 'Général',
+                score: parseFloat(rowGet(r, ['Score', 'score'])) || 0
+            };
+            const licence = String(rowGet(r, ['Licence', 'licence'])).trim();
+            if (licence) data.licence = licence;
+
+            if (id && existingIds.has(id)) {
+                writeShooter(db.ref(CLUB_PATH + '/' + compId + '/shooters/' + id), data, true)
+                    .catch(e => console.warn('Échec mise à jour ' + id, e.message || e));
+                updated++;
+            } else {
+                const newRef = db.ref(CLUB_PATH + '/' + compId + '/shooters').push();
+                writeShooter(newRef, data, false)
+                    .catch(e => console.warn('Échec création', e.message || e));
+                created++;
+            }
+        });
+        document.getElementById('reimportReport').textContent =
+            `✅ ${updated} fiche(s) mise(s) à jour, ${created} créée(s)` +
+            (skipped ? `, ${skipped} ligne(s) ignorée(s) (nom ou prénom manquant).` : '.');
+        pendingReimportRows = null;
+        document.getElementById('reimportFileInput').value = '';
+        document.getElementById('reimportPreview').textContent = '';
+    }
+
+    // ─── Séries : (dés)association d'un tireur à une série, indépendamment du schéma "shooters"
+    // (écrit uniquement sous slots/<id>/registered et slots/<id>/count, jamais sur le tireur lui-même).
+    function populateSlotSelect() {
+        const row = document.getElementById('slotFieldRow');
+        const sel = document.getElementById('newSlot');
+        if (!hasSlots) { row.style.display = 'none'; sel.innerHTML = '<option value="">— Aucune —</option>'; return; }
+        row.style.display = 'block';
+        const currentVal = sel.value;
+        let html = '<option value="">— Aucune —</option>';
+        Object.keys(slotsData).forEach(slotId => {
+            const slot = slotsData[slotId];
+            const when = formatSlotWhen(slot);
+            const label = when ? (slot.label ? `${when} — ${slot.label}` : when) : (slot.label || '(sans nom)');
+            const capacity = Number(slot.capacity) || 0;
+            const count = Number(slot.count) || 0;
+            html += `<option value="${slotId}">${label} (${count}/${capacity})</option>`;
+        });
+        sel.innerHTML = html;
+        if (currentVal && slotsData[currentVal]) sel.value = currentVal;
+
+        // Cases à cocher (mode ajout) — on conserve ce qui était déjà coché lors des rafraîchissements en direct
+        const multi = document.getElementById('newSlotMulti');
+        const checked = new Set(getCheckedSlots());
+        multi.innerHTML = Object.keys(slotsData).map(slotId => {
+            const slot = slotsData[slotId];
+            const capacity = Number(slot.capacity) || 0, count = Number(slot.count) || 0;
+            const isFull = count >= capacity;
+            const on = checked.has(slotId);
+            const allowed = Array.isArray(slot.disciplines) ? slot.disciplines : [];
+            const discTxt = allowed.length === 1 ? ` · imposée : ${allowed[0]}` : (allowed.length > 1 ? ` · ${allowed.join(' / ')}` : '');
+            return `<label class="slot-check ${isFull ? 'full' : ''} ${on ? 'on' : ''}" title="${allowed.length === 1 ? 'Discipline imposée par la série' : (allowed.length > 1 ? 'Disciplines possibles dans cette série' : 'Discipline libre')}">
+                <input type="checkbox" value="${slotId}" ${on ? 'checked' : ''} onchange="this.parentNode.classList.toggle('on', this.checked); applySlotDisciplineConstraint()">
+                ${slotLabelOf(slot)} <span style="color:var(--text-muted);">(${count}/${capacity})${discTxt}</span></label>`;
+        }).join('');
+        applySlotDisciplineConstraint();
+    }
+
+    // ─── Cohérence discipline ↔ séries : c'est la DISCIPLINE choisie qui décide des séries cochables ───
+    //  - série à discipline imposée (1 seule) : cochable uniquement si c'est la discipline choisie ;
+    //  - série "au choix" (plusieurs) : cochable si la discipline choisie en fait partie ;
+    //  - série sans discipline définie : toujours cochable.
+    // Les séries incompatibles sont grisées, barrées et décochées. Pour engager le même tireur dans une
+    // autre discipline, utiliser « Enregistrer et ajouter une autre série / discipline ».
+    function applySlotDisciplineConstraint() {
+        const sel = document.getElementById('newDiscipline');
+        const hint = document.getElementById('discHint');
+        if (!sel || document.getElementById('editId').value) return;
+        const disc = (sel.value || '').trim();
+        let blocked = 0;
+        document.querySelectorAll('#newSlotMulti input').forEach(inp => {
+            const sl = slotsData[inp.value];
+            const allowed = sl && Array.isArray(sl.disciplines) ? sl.disciplines : [];
+            const ok = discAllowedInSlot(disc, sl);
+            inp.disabled = !ok;
+            inp.parentNode.classList.toggle('incompatible', !ok);
+            inp.parentNode.title = ok ? '' : `Cette série n'accepte pas « ${disc} »` + (allowed.length ? ` (${allowed.join(' / ')})` : ` (série ${distanceOf(sl.label)} m)`);
+            if (!ok) { blocked++; if (inp.checked) { inp.checked = false; inp.parentNode.classList.remove('on'); } }
+        });
+        if (hint) {
+            hint.textContent = blocked ? `🔒 ${blocked} série(s) grisée(s) : elles n'acceptent pas « ${disc} ». Change la discipline pour les cocher.` : '';
+            hint.classList.toggle('show', blocked > 0);
+        }
+    }
+    // Toute modification du menu Discipline (quel que soit le type de compétition) refiltre les séries.
+    document.getElementById('discFieldWrap').addEventListener('change', e => { if (e.target && e.target.id === 'newDiscipline') applySlotDisciplineConstraint(); });
+
+    function getCheckedSlots() {
+        return Array.from(document.querySelectorAll('#newSlotMulti input:checked')).map(i => i.value);
+    }
+    function clearCheckedSlots() {
+        document.querySelectorAll('#newSlotMulti input').forEach(i => { i.checked = false; i.parentNode.classList.remove('on'); });
+        applySlotDisciplineConstraint();
+    }
+
+    // Écrit la fiche tireur ; si les règles Firebase n'acceptent pas encore le champ "licence",
+    // réessaie sans lui pour ne jamais bloquer la saisie.
+    function writeShooter(ref, data, isUpdate) {
+        const op = d => isUpdate ? ref.update(d) : ref.set(d);
+        return op(data).catch(e => {
+            if (data.licence !== undefined && /PERMISSION_DENIED/i.test((e && (e.code || e.message)) || '')) {
+                const lite = Object.assign({}, data); delete lite.licence;
+                console.warn('Champ "licence" refusé par les règles Firebase — écriture sans licence.');
+                return op(lite);
+            }
+            throw e;
+        });
+    }
+
+    function assignSlot(shooterId, slotId, info) {
+        if (!slotId) return;
+        db.ref(CLUB_PATH + '/' + compId + '/slots/' + slotId + '/registered/' + shooterId).set(info);
+        db.ref(CLUB_PATH + '/' + compId + '/slots/' + slotId + '/count').transaction(c => (c || 0) + 1);
+    }
+    function unassignSlot(shooterId, slotId) {
+        if (!slotId) return;
+        db.ref(CLUB_PATH + '/' + compId + '/slots/' + slotId + '/registered/' + shooterId).remove();
+        db.ref(CLUB_PATH + '/' + compId + '/slots/' + slotId + '/count').transaction(c => Math.max(0, (c || 0) - 1));
+    }
+
+    // keepIdentity = true : garde nom/prénom/club/licence après l'enregistrement pour saisir
+    // un autre engagement du même tireur (autre série, et/ou autre discipline).
+    function addShooter(keepIdentity) {
+        const nom = document.getElementById('newNom').value.toUpperCase().trim();
+        const prenom = document.getElementById('newPrenom').value.trim();
+        const club = document.getElementById('newClub').value.trim() || "-";
+        const licence = document.getElementById('newLicence').value.replace(/\s+/g, '');
+        const disc = document.getElementById('newDiscipline').value.trim();
+        const cat = document.getElementById('newCategorie').value.trim() || "Général";
+        // Plusieurs séries cochées = un engagement par série (même discipline / catégorie).
+        // Aucune série cochée = un seul engagement sans série.
+        const slotIds = hasSlots ? getCheckedSlots() : [];
+        const targets = slotIds.length ? slotIds : [''];
+
+        if (!nom || !prenom) return alert("Nom et Prénom requis");
+        const fixedDisc = id => id && slotsData[id] && Array.isArray(slotsData[id].disciplines) && slotsData[id].disciplines.length === 1;
+        if (!disc && targets.some(id => !fixedDisc(id))) return alert("Discipline requise");
+
+        // Doublon = même tireur, même discipline, même série (ou tous deux sans série).
+        // Le même tireur peut donc s'engager dans plusieurs séries, avec la même discipline
+        // ou des disciplines différentes (ex. 10 m le matin, pistolet 50 m l'après-midi).
+        // Discipline effective par série : imposée par la série si elle n'en a qu'une ;
+        // sinon celle du formulaire, qui doit faire partie des disciplines de la série si définies.
+        const menuDiscs = Array.from((document.getElementById('newDiscipline') || {}).options || []).map(o => o.value);
+        const discFor = slotId => {
+            const allowed = slotId && slotsData[slotId] && Array.isArray(slotsData[slotId].disciplines) ? slotsData[slotId].disciplines : [];
+            if (allowed.length === 1) {
+                // Série à discipline imposée : si la discipline du formulaire lui correspond (synonyme ou
+                // précision d'un nom générique, ex. « Carabine 50 m » → « Carabine 60 BC 50 m »), on garde
+                // la discipline précise du formulaire ; sinon le nom officiel du menu.
+                if (disc && sameDisc(allowed[0], disc)) return disc;
+                return canonicalDisc(allowed[0], menuDiscs);
+            }
+            return disc;
+        };
+        for (const slotId of targets) {
+            if (!slotId) continue;
+            const sl = slotsData[slotId];
+            const allowed = sl && Array.isArray(sl.disciplines) ? sl.disciplines : [];
+            if (allowed.length !== 1 && !discAllowedInSlot(disc, sl)) {
+                return alert(`⚠️ La série ${slotLabelOf(sl)} n'accepte pas « ${disc} »` + (allowed.length ? ` (disciplines : ${allowed.join(' / ')}).` : ` (série ${distanceOf(sl.label)} m).`));
+            }
+        }
+
+        const slotOf = id => (slotByShooter[id] && slotByShooter[id].slotId) || '';
+        for (const slotId of targets) {
+            const d = discFor(slotId);
+            const existeDeja = shootersData.some(s => s.lastName === nom && s.firstName === prenom && s.discipline === d && slotOf(s.id) === slotId);
+            if (existeDeja) {
+                const where = slotId ? ` dans la série ${(slotsData[slotId] && slotLabelOf(slotsData[slotId])) || ''}` : '';
+                return alert(`⚠️ IMPOSSIBLE : ${nom} ${prenom} est DÉJÀ inscrit en ${d}${where}.`);
+            }
+        }
+
+        // NB : le schéma de validation Firebase (Realtime Database → Rules) n'autorise que les
+        // champs de la liste blanche sur un tireur — "licence" doit y être ajouté (comme "series").
+        const base = { lastName: nom, firstName: prenom, club: club, discipline: disc, category: cat, score: 0 };
+        if (licence) base.licence = licence;
+        const info = { lastName: nom, firstName: prenom, club: club };
+        if (licence) info.licence = licence;
+
+        targets.forEach(slotId => {
+            const newRef = db.ref(CLUB_PATH + '/' + compId + '/shooters').push();
+            const d = discFor(slotId);
+            writeShooter(newRef, Object.assign({}, base, { discipline: d }), false)
+                .then(() => { if (slotId) assignSlot(newRef.key, slotId, Object.assign({}, info, { discipline: d, category: cat })); })
+                .catch(e => alert("Échec de l'enregistrement : " + (e.message || e.code || e)));
+        });
+
+        const key = nom.replace(/[^a-zA-Z]/g, "") + "_" + prenom.replace(/[^a-zA-Z]/g, "");
+        db.ref('Ligue_Tireurs_Archive/' + key).update(info);
+
+        if (keepIdentity) {
+            // Identité conservée, séries décochées : il ne reste qu'à choisir série(s)/discipline.
+            clearCheckedSlots();
+            document.getElementById('newSlot').value = '';
+            if (hasSlots) document.getElementById('newSlotMulti').scrollIntoView({ block: 'center' });
+            document.getElementById('newDiscipline').focus();
+        } else {
+            resetForm();
+        }
+    }
+
+    function slotLabelOf(slot) {
+        const when = formatSlotWhen(slot);
+        return when ? (slot.label ? `${when} — ${slot.label}` : when) : (slot.label || '(sans nom)');
+    }
+
+    function prepareEdit(id) {
+        const s = shootersData.find(x => x.id === id);
+        document.getElementById('editId').value = id;
+        document.getElementById('newNom').value = s.lastName;
+        document.getElementById('newPrenom').value = s.firstName;
+        document.getElementById('newClub').value = s.club;
+        document.getElementById('newLicence').value = s.licence || '';
+        document.getElementById('slotMultiWrap').style.display = 'none';
+        document.getElementById('slotSingleWrap').style.display = 'block';
+        document.getElementById('btnAdd').style.display = 'none';
+        document.getElementById('btnAddMore').style.display = 'none';
+        document.getElementById('btnUpdate').style.display = 'block';
+        document.getElementById('btnCancel').style.display = 'block';
+        document.getElementById('formTireur').classList.add('panel-edit-mode');
+        window.scrollTo(0,0);
+
+        // Le type n'est pas stocké sur le tireur (contrainte du schéma Firebase) : on le redéduit
+        // en comparant sa discipline aux catalogues connus ; par défaut AMICAL (texte libre) si
+        // aucun catalogue ne correspond — couvre aussi bien les anciennes fiches que celles
+        // enregistrées en texte libre via l'inscription QR.
+        let foundType = "AMICAL";
+        for (let type in dataRef) {
+            if (dataRef[type].disc && dataRef[type].disc.includes(s.discipline)) {
+                foundType = type;
+                break;
+            }
+        }
+
+        document.getElementById('typeSelector').value = foundType;
+        updateMenus();
+        const ensureOpt = (sel, val) => {
+            if (!sel || sel.tagName !== 'SELECT' || !val) return;
+            if (!Array.from(sel.options).some(o => o.value === val)) sel.insertAdjacentHTML('afterbegin', `<option value="${escAttr(val)}">${val}</option>`);
+        };
+        document.getElementById('newDiscipline').disabled = false;
+        document.getElementById('discHint').classList.remove('show');
+        ensureOpt(document.getElementById('newDiscipline'), s.discipline);
+        document.getElementById('newDiscipline').value = s.discipline;
+        if (!dataRef[foundType].freeText) { updateCategories(); }
+        ensureOpt(document.getElementById('newCategorie'), s.category);
+        document.getElementById('newCategorie').value = s.category;
+
+        populateSlotSelect();
+        const currentSlot = slotByShooter[id];
+        document.getElementById('newSlot').value = currentSlot ? currentSlot.slotId : '';
+    }
+
+    function saveModification() {
+        const id = document.getElementById('editId').value;
+        const updates = {
+            lastName: document.getElementById('newNom').value.toUpperCase().trim(),
+            firstName: document.getElementById('newPrenom').value.trim(),
+            club: document.getElementById('newClub').value.trim(),
+            discipline: document.getElementById('newDiscipline').value.trim(),
+            category: document.getElementById('newCategorie').value.trim() || "Général"
+        };
+        const lic = document.getElementById('newLicence').value.replace(/\s+/g, '');
+        if (lic) updates.licence = lic;
+        writeShooter(db.ref(CLUB_PATH + '/' + compId + '/shooters/' + id), updates, true)
+            .catch(e => alert("Échec de la modification : " + (e.message || e.code || e)));
+
+        // Si la série a été changée dans le formulaire, on désinscrit de l'ancienne et on
+        // inscrit dans la nouvelle (les deux nœuds sont indépendants du tireur lui-même).
+        const newSlotId = document.getElementById('newSlot').value;
+        const prevSlot = slotByShooter[id];
+        const prevSlotId = prevSlot ? prevSlot.slotId : '';
+        if (prevSlotId !== newSlotId) {
+            if (prevSlotId) unassignSlot(id, prevSlotId);
+            if (newSlotId) assignSlot(id, newSlotId, { lastName: updates.lastName, firstName: updates.firstName, club: updates.club });
+        }
+        resetForm();
+    }
+
+    function deleteShooter(id) {
+        const s = shootersData.find(x => x.id === id);
+        const nom = s ? `${s.lastName || ''} ${s.firstName || ''}`.trim() : 'ce tireur';
+        let msg = `Supprimer ${nom} ?`;
+        if (s && Number(s.score) > 0) {
+            msg += `\n\n⚠️ Un score est déjà enregistré (${s.score}) — il sera définitivement perdu.`;
+        }
+        if(confirm(msg)) {
+            // Libère aussi sa place de série le cas échéant, pour ne pas garder une place bloquée.
+            const currentSlot = slotByShooter[id];
+            if (currentSlot) unassignSlot(id, currentSlot.slotId);
+            db.ref(CLUB_PATH + '/' + compId + '/shooters/' + id).remove();
+        }
+    }
+
+    function resetForm() {
+        document.getElementById('editId').value = '';
+        document.getElementById('newNom').value = '';
+        document.getElementById('newPrenom').value = '';
+        document.getElementById('newClub').value = '';
+        document.getElementById('newLicence').value = '';
+        document.getElementById('newSlot').value = '';
+        clearCheckedSlots();
+        document.getElementById('slotMultiWrap').style.display = 'block';
+        document.getElementById('slotSingleWrap').style.display = 'none';
+        document.getElementById('btnAdd').style.display = 'block';
+        document.getElementById('btnAddMore').style.display = 'block';
+        document.getElementById('btnUpdate').style.display = 'none';
+        document.getElementById('btnCancel').style.display = 'none';
+        document.getElementById('formTireur').classList.remove('panel-edit-mode');
+    }
+
+    function renderList(list) {
+        const cont = document.getElementById('shooterList');
+        if (list.length === 0) {
+            cont.innerHTML = `<div class="empty-state"><div class="empty-icon">🎯</div>Aucun tireur enregistré pour cette compétition.</div>`;
+            return;
+        }
+        cont.innerHTML = '';
+        list.sort((a,b) => a.lastName.localeCompare(b.lastName)).forEach(s => {
+            const div = document.createElement('div');
+            div.className = 'shooter-item';
+            div.innerHTML = `
+                <div style="flex:1; min-width:0;">
+                    <div class="shooter-name">${s.lastName} <span style="font-weight:400; color:var(--text-muted)">${s.firstName}</span></div>
+                    <div class="shooter-detail">
+                        <span class="tag">${s.discipline}</span>
+                        <span class="tag" style="border-color:rgba(217,154,28,0.4); color:#b07d10">${s.category}</span>
+                        <span class="tag">${s.club}</span>
+                        ${s.licence ? `<span class="tag" title="N° de licence">🪪 ${s.licence}</span>` : ''}
+                    </div>
+                </div>
+                ${hasSlots ? `<span class="tag slot-tag" title="Série (créneau)">${(slotByShooter[s.id] && slotByShooter[s.id].label) || '—'}${(slotByShooter[s.id] && slotByShooter[s.id].poste) ? ` · <b>Poste ${slotByShooter[s.id].poste}</b>` : ''}</span>` : ''}
+                ${s.series ? `<div class="volees-detail">${s.series.split(',').join('  ')}</div>` : ''}
+                <div class="actions">
+                    <input type="number" step="0.1" class="score-input" value="${s.score || 0}" onchange="saveScore('${s.id}', this.value)">
+                    <button type="button" class="btn-calc" title="Détail par séries" onclick="openScoreCalc('${s.id}', '${(s.lastName + ' ' + s.firstName).replace(/'/g,"\\'")}')">🧮</button>
+                    <button type="button" class="btn-action btn-edit" onclick="prepareEdit('${s.id}')">✏️</button>
+                    <button type="button" class="btn-action btn-del" onclick="deleteShooter('${s.id}')">🗑️</button>
+                </div>`;
+            cont.appendChild(div);
+        });
+    }
+
+    function saveScore(id, val) { db.ref(CLUB_PATH + '/' + compId + '/shooters/' + id).update({ score: parseFloat(val) || 0 }); }
+
+    // ─── Calcul de score par addition de plusieurs séries de tirs (ex: 90 90 92 88 82 87 → total 529) ───
+    // Le TOTAL est enregistré dans le champ "score" existant, et le détail série par série dans un
+    // nouveau champ "series" (texte, ex: "90,90,92,88,82,87") — ajouté au schéma Firebase (règles
+    // mises à jour) pour pouvoir l'afficher dans la liste et sur l'écran TV.
+    // NB : ce "série" (suite de tirs, ex: 10 coups = 100 points) est un mot différent de la "Série"
+    // de créneau d'inscription (places limitées) utilisée ailleurs sur le site — même mot, deux sens
+    // distincts selon le contexte, comme dans le club.
+    let calcShooterId = null;
+
+    function openScoreCalc(id, name) {
+        calcShooterId = id;
+        document.getElementById('calcShooterName').textContent = name;
+        document.getElementById('calcSeriesList').innerHTML = '';
+        const shooter = shootersData.find(x => x.id === id);
+        const existing = (shooter && shooter.series) ? shooter.series.split(',').map(v => v.trim()).filter(v => v !== '') : [];
+        if (existing.length > 0) {
+            existing.forEach(v => addSeriesField(v));
+        } else {
+            for (let i = 0; i < 4; i++) addSeriesField();
+        }
+        updateCalcTotal();
+        document.getElementById('scoreCalcModal').classList.add('active');
+    }
+
+    function closeScoreCalc() {
+        document.getElementById('scoreCalcModal').classList.remove('active');
+        calcShooterId = null;
+    }
+
+    function addSeriesField(value) {
+        const list = document.getElementById('calcSeriesList');
+        const row = document.createElement('div');
+        row.className = 'calc-series-row';
+        row.innerHTML = `
+            <input type="number" step="0.1" placeholder="Série ${list.children.length + 1}" value="${value != null ? value : ''}" oninput="updateCalcTotal()">
+            <button type="button" title="Retirer" onclick="this.parentElement.remove(); updateCalcTotal();">🗑️</button>`;
+        list.appendChild(row);
+        updateCalcTotal();
+    }
+
+    function updateCalcTotal() {
+        const inputs = document.querySelectorAll('#calcSeriesList input');
+        let total = 0;
+        inputs.forEach(inp => { total += parseFloat(inp.value) || 0; });
+        // Affiche le total avec ou sans décimale selon le besoin (542 plutôt que 542.0)
+        document.getElementById('calcTotalValue').textContent = (Math.round(total * 100) / 100).toString();
+    }
+
+    function saveCalcTotal() {
+        if (!calcShooterId) return;
+        const inputs = document.querySelectorAll('#calcSeriesList input');
+        const values = [];
+        inputs.forEach(inp => { if (inp.value.trim() !== '') values.push(parseFloat(inp.value) || 0); });
+        const total = parseFloat(document.getElementById('calcTotalValue').textContent) || 0;
+        db.ref(CLUB_PATH + '/' + compId + '/shooters/' + calcShooterId).update({
+            score: total,
+            series: values.join(',')
+        });
+        closeScoreCalc();
+    }
+
+    // ─── Harmonisation des appellations (disciplines / catégories) ───
+    function openHarmonize() {
+        const type = document.getElementById('typeSelector').value;
+        const discCanon = dataRef[type].freeText ? amicalDiscList() : dataRef[type].disc.slice();
+        const catCanon = dataRef[type].freeText ? AMICAL_CATS.slice() : dataRef[type].cats.slice();
+
+        const count = (field) => {
+            const m = {};
+            shootersData.forEach(s => { const v = (s[field] || '').trim(); if (v) m[v] = (m[v] || 0) + 1; });
+            return Object.keys(m).sort((a, b) => a.localeCompare(b, 'fr')).map(k => [k, m[k]]);
+        };
+        const norm = v => v.toLowerCase().replace(/\s+/g, '').replace(/[-_.]/g, '');
+        // Proposition automatique : même texte sans espaces/majuscules, ou nom canonique contenu dans la valeur
+        // Abréviations courantes de catégories : S1 → Senior 1, D2 → Dame 2, JG/JF → Junior…
+        const CAT_ALIAS = { s1:'Senior 1', s2:'Senior 2', s3:'Senior 3', d1:'Dame 1', d2:'Dame 2', d3:'Dame 3',
+            jg:'Junior Garçon', jf:'Junior Fille', j:'Junior', cg:'Cadet G', cf:'Cadet F', c:'Cadet', mg:'Minime G', mf:'Minime F', m:'Minime',
+            bg:'Benjamin Garçon', bf:'Benjamin Fille', b:'Benjamin', pg:'Poussin Garçon', pf:'Poussin Fille', p:'Poussin' };
+        const guess = (val, canon) => {
+            const n = norm(val);
+            const direct = canon.find(c => norm(c) === n) || canon.find(c => sameDisc(c, val) && discKey(val).length > 3);
+            if (direct) return direct;
+            const alias = CAT_ALIAS[n];
+            if (alias) {
+                const hit = canon.find(c => norm(c) === norm(alias)) || canon.find(c => norm(alias).startsWith(norm(c)));
+                if (hit) return hit;
+            }
+            return canon.find(c => n.includes(norm(c)) || norm(c).includes(n)) || '';
+        };
+        const section = (title, field, canon) => {
+            const rows = count(field);
+            if (!rows.length) return '';
+            const allNames = canon.slice();
+            rows.forEach(([k]) => { if (!allNames.includes(k)) allNames.push(k); });
+            return `<div class="modal-calc-title" style="font-size:1rem; margin-top:10px;">${title}</div>
+                <table class="harm-table"><thead><tr><th>Trouvé dans la saisie</th><th class="cnt">Tireurs</th><th>→ Remplacer par</th></tr></thead><tbody>` +
+                rows.map(([k, n]) => {
+                    const g = canon.includes(k) ? k : (guess(k, canon) || k);
+                    return `<tr class="${g !== k ? 'changed' : ''}"><td>${escAttr(k)}</td><td class="cnt">${n}</td>
+                        <td><select data-field="${field}" data-from="${escAttr(k)}" onchange="this.closest('tr').classList.toggle('changed', this.value !== this.dataset.from)">${optsHtml(allNames, g)}</select></td></tr>`;
+                }).join('') + `</tbody></table>`;
+        };
+        const html = section('Disciplines', 'discipline', discCanon) + section('Catégories', 'category', catCanon);
+        document.getElementById('harmonizeBody').innerHTML = html || '<div class="modal-calc-hint">Aucun tireur inscrit.</div>';
+        document.getElementById('harmonizeModal').classList.add('active');
+    }
+    function closeHarmonize() { document.getElementById('harmonizeModal').classList.remove('active'); }
+    function applyHarmonize() {
+        const changes = Array.from(document.querySelectorAll('#harmonizeBody select'))
+            .filter(sel => sel.value !== sel.dataset.from)
+            .map(sel => ({ field: sel.dataset.field, from: sel.dataset.from, to: sel.value }));
+        if (!changes.length) return closeHarmonize();
+        const updates = {};
+        let n = 0;
+        shootersData.forEach(s => {
+            changes.forEach(c => {
+                if ((s[c.field] || '').trim() === c.from) { updates[s.id + '/' + c.field] = c.to; n++; }
+            });
+        });
+        if (!confirm(`Appliquer ${changes.length} renommage(s) sur ${n} ligne(s) de tireur ?`)) return;
+        db.ref(CLUB_PATH + '/' + compId + '/shooters').update(updates)
+            .then(() => { closeHarmonize(); alert(`✅ ${n} ligne(s) mise(s) à jour. Les classements sont recalculés automatiquement.`); })
+            .catch(e => alert("Échec : " + (e.message || e)));
+    }
+
+    function chercherDansArchive(val) {
+        const box = document.getElementById('suggestions');
+        if (val.length < 3) { box.style.display = 'none'; return; }
+        const matches = archiveTireurs.filter(t => t.lastName.includes(val.toUpperCase())).slice(0, 5);
+        if (matches.length > 0) {
+            box.innerHTML = matches.map(m => `<div class="suggestion-item" onclick="remplirTireur('${m.lastName}', '${m.firstName}', '${m.club}', '${m.licence || ''}')"><b>${m.lastName}</b> ${m.firstName} — ${m.club}${m.licence ? ' · ' + m.licence : ''}</div>`).join('');
+            box.style.display = 'block';
+        } else { box.style.display = 'none'; }
+    }
+
+    function remplirTireur(n, p, c, l) {
+        document.getElementById('newNom').value = n;
+        document.getElementById('newPrenom').value = p;
+        document.getElementById('newClub').value = c;
+        document.getElementById('newLicence').value = l || '';
+        document.getElementById('suggestions').style.display = 'none';
+    }
+
+    function filterList() {
+        const q = document.getElementById('search').value.toLowerCase();
+        renderList(shootersData.filter(s => s.lastName.toLowerCase().includes(q) || s.firstName.toLowerCase().includes(q)));
+    }
+
+    // NB : le menu Discipline/Catégorie est désormais initialisé par startDataListeners()
+    // une fois connecté et la compétition chargée (voir plus haut), pour pouvoir présélectionner
+    // le bon type. Rien à faire ici au chargement de la page.
+</script>
+</body>
+</html>
