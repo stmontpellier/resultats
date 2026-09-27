@@ -20,12 +20,12 @@ const CONFIG = {
   // 4) Clés Firebase — à copier depuis la console Firebase :
   //    Paramètres du projet ⚙️ → Général → Vos applications → Configuration du SDK (firebaseConfig)
   firebase: {
-    // >>> À REMPLACER par les clés du projet Firebase de la STM <<<
-    apiKey: "A_COMPLETER",
-    authDomain: "A_COMPLETER",
-    databaseURL: "A_COMPLETER",
-    projectId: "A_COMPLETER",
-    storageBucket: "A_COMPLETER",
-    appId: "A_COMPLETER"
+    apiKey: "AIzaSyCMtOjc-nSlpifdzUWwahnu2KxbywJY79c",
+    authDomain: "resultats-tir-montpellier.firebaseapp.com",
+    databaseURL: "https://resultats-tir-montpellier-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "resultats-tir-montpellier",
+    storageBucket: "resultats-tir-montpellier.firebasestorage.app",
+    messagingSenderId: "916701739540",
+    appId: "1:916701739540:web:2c3d75e85862fecb5d4501"
   }
 };
