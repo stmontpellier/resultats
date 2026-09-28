@@ -1,3 +1,8 @@
+/*
+  © 2026 Gérard GARCIA — Tous droits réservés.
+  Reproduction, modification ou réutilisation interdite sans autorisation écrite de l'auteur.
+  Voir le fichier LICENCE.
+*/
 // ============================================================
 //  12 H PAR ÉQUIPES — fonctions communes (v1.1 — 27/09/2026)
 //  Utilisé par e12_inscription.html, e12_saisie.html, e12_classement.html
